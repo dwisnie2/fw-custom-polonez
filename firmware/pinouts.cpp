@@ -1,0 +1,44 @@
+#include "pch.h"
+#include "bench_test.h"
+#include "flash_main.h"
+#include "tunerstudio.h"
+
+// Board preset: 0.4 adapter (4-cyl)
+static void setBoard_04_pinout() {
+	engineConfiguration->injectionPins[0] = Gpio::B15;
+	engineConfiguration->injectionPins[1] = Gpio::B14;
+	engineConfiguration->injectionPins[2] = Gpio::B12;
+	engineConfiguration->injectionPins[3] = Gpio::B13;
+
+	engineConfiguration->ignitionPins[0] = Gpio::E2;
+	engineConfiguration->ignitionPins[1] = Gpio::E3;
+	engineConfiguration->ignitionPins[2] = Gpio::C13;
+	engineConfiguration->ignitionPins[3] = Gpio::E7;
+}
+
+// Board preset: UA4C adapter (4-cyl)
+static void setBoard_ua4c_pinout() {
+	engineConfiguration->injectionPins[0] = Gpio::B15;
+	engineConfiguration->injectionPins[1] = Gpio::D8;
+	engineConfiguration->injectionPins[2] = Gpio::D9;
+	engineConfiguration->injectionPins[3] = Gpio::D10;
+
+	engineConfiguration->ignitionPins[0] = Gpio::E15;
+	engineConfiguration->ignitionPins[1] = Gpio::E4;
+	engineConfiguration->ignitionPins[2] = Gpio::D13;
+	engineConfiguration->ignitionPins[3] = Gpio::E5;
+}
+
+void customBoardTsAction(uint16_t subSystem, uint16_t index) {
+	if (subSystem != (uint16_t)TS_BOARD_ACTION) {
+		return;
+	}
+
+	if (index == 0) {
+		setBoard_04_pinout();
+	} else if (index == 1) {
+		setBoard_ua4c_pinout();
+	}
+	writeToFlashNow();
+	onApplyPreset();
+}

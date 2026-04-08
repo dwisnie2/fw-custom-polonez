@@ -1,5 +1,6 @@
 #include "pch.h"
 
 void boardTuneDefaults() {
-    engineConfiguration->displacement = 1.6;
+	engineConfiguration->displacement = 3.0;
+	engineConfiguration->cylindersCount = 6;
 }
