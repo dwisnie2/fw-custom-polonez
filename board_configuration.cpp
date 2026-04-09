@@ -1,5 +1,46 @@
 #include "pch.h"
 #include "board_overrides.h"
+#include "frequency_sensor.h"
+
+// ========== VSS spike rejection filter ==========
+// vehicleSpeedSensor has external linkage in upstream — we hook into it
+extern FrequencySensor vehicleSpeedSensor;
+
+// Custom converter: wraps standard freq→km/h conversion + spike rejection
+class SpikeRejectingVssConverter : public SensorConverter {
+public:
+	SensorResult convert(float frequency) const override {
+		// Reject impossible spikes: if frequency jumps >3× vs previous, discard
+		if (m_lastFreq > 0 && frequency > m_lastFreq * 3.0f) {
+			m_rejectCount++;
+			return m_lastKph;  // return last known good value
+		}
+		m_lastFreq = frequency;
+
+		auto vssRevPerKm = engineConfiguration->driveWheelRevPerKm * engineConfiguration->vssGearRatio;
+		auto pulsePerKm = vssRevPerKm * engineConfiguration->vssToothCount;
+		if (pulsePerKm == 0) {
+			return 0;
+		}
+		m_lastKph = frequency * 3600.0f / pulsePerKm;
+		return m_lastKph;
+	}
+
+	mutable float m_lastFreq = 0;
+	mutable float m_lastKph = 0;
+	mutable int m_rejectCount = 0;
+};
+
+static SpikeRejectingVssConverter spikeRejectingVssConverter;
+static bool vssFilterInstalled = false;
+
+static void polonezPeriodicFast() {
+	// One-shot: swap VSS converter to our spike-rejecting version after init
+	if (!vssFilterInstalled) {
+		vehicleSpeedSensor.setFunction(spikeRejectingVssConverter);
+		vssFilterInstalled = true;
+	}
+}
 
 Gpio getCommsLedPin() {
 	return Gpio::Unassigned;
@@ -97,6 +138,7 @@ static void customBoardDefaultConfiguration() {
 
 void setup_custom_board_overrides() {
 	custom_board_DefaultConfiguration = customBoardDefaultConfiguration;
+	custom_board_periodicFastCallback = polonezPeriodicFast;
 
 	void customBoardTsAction(uint16_t subSystem, uint16_t index);
 	custom_board_ts_command = customBoardTsAction;
