@@ -2,6 +2,7 @@
 #include "board_overrides.h"
 #include "frequency_sensor.h"
 #include "trigger_structure.h"
+#include "trigger_universal.h"
 
 // ========== Rover K16 trigger (MEMS3 Common Pattern 2) ==========
 // 36-slot crank wheel, 4 single missing teeth at 30/60/210/250° ATDC
