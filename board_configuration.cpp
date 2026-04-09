@@ -1,6 +1,58 @@
 #include "pch.h"
 #include "board_overrides.h"
 #include "frequency_sensor.h"
+#include "trigger_structure.h"
+#include "trigger_universal.h"
+
+// ========== MG Rover MEMS3 Common Pattern 2 trigger ==========
+// 36-slot crank wheel, 4 single missing teeth
+// Tooth groups between gaps: 2, 14, 3, 13
+// Missing teeth at ATDC: 30°, 60°, 210°, 250°
+//
+// Sync strategy: the pair of close gaps (2 teeth apart) is unique;
+// gap ratio sequence [~1.0, 2.0, ~0.14 (=2/14), 1.0] only occurs once per rev.
+
+static void initializeMems3Pattern2(TriggerWaveform *s) {
+	s->initialize(FOUR_STROKE_CRANK_SENSOR, SyncEdge::RiseOnly);
+
+	constexpr int total = 36;
+	constexpr float oneTooth = 720.0f / total;  // 20° in 720° model = 10° physical
+	constexpr float engineCycle = 720;
+
+	// Tooth groups: 2, 14, 3, 13 with 1-tooth gaps between them
+	// Start pattern from the first gap (gap between group-of-13 and group-of-2)
+	constexpr int groups[] = {2, 14, 3, 13};
+	constexpr int nGroups = 4;
+
+	float offset = 0;
+	for (int g = 0; g < nGroups; g++) {
+		float segStart = offset;
+		float segEnd = offset + groups[g] * oneTooth;
+		addSkippedToothTriggerEvents(T_PRIMARY, s, total, 0, 0.5f,
+			segStart, engineCycle, NO_LEFT_FILTER, segEnd + 1);
+		offset = segEnd + oneTooth;  // +1 missing tooth gap
+	}
+
+	// Sync on gap_A (after group-of-2, before group-of-14).
+	// Looking backwards from sync edge:
+	//   dur[0]=40 (gap_A), dur[1]=20 (tooth2), dur[2]=20 (tooth1), dur[3]=40 (gap_D)
+	// gap[0] = dur[0]/dur[1] = 40/20 = 2.0  (entering a gap)
+	// gap[1] = dur[1]/dur[2] = 20/20 = 1.0  (two normal teeth)
+	// gap[2] = dur[2]/dur[3] = 20/40 = 0.5  (coming out of previous gap)
+	// This [2.0, 1.0, 0.5] is unique — other gaps all show [2.0, 1.0, 1.0].
+	s->setTriggerSynchronizationGap3(/*gapIndex*/0, 1.5f, 2.5f);   // ~2.0
+	s->setTriggerSynchronizationGap3(/*gapIndex*/1, 0.8f, 1.2f);   // ~1.0
+	s->setTriggerSynchronizationGap3(/*gapIndex*/2, 0.35f, 0.65f); // ~0.5
+}
+
+void customTrigger(operation_mode_e triggerOperationMode, TriggerWaveform *s, trigger_type_e type) {
+	if (type == trigger_type_e::TT_CUSTOM_1) {
+		initializeMems3Pattern2(s);
+		return;
+	}
+	// fallback: single tooth (default weak implementation behavior)
+	initializeSkippedToothTrigger(s, 1, 0, triggerOperationMode, SyncEdge::Rise);
+}
 
 // ========== VSS spike rejection filter ==========
 // vehicleSpeedSensor has external linkage in upstream — we hook into it
@@ -84,8 +136,8 @@ Gpio getWarningLedPin() {
 
 // Polonez board defaults — Speeduino-to-rusEFI adapter with STM32/GD32
 static void customBoardDefaultConfiguration() {
-	// ========== Trigger ==========
-	engineConfiguration->triggerInputPins[0] = Gpio::D4;  // crank (36-2)
+	// ========== Trigger — MEMS3 Common Pattern 2 (custom, select "Custom 1" in TS) ==========
+	engineConfiguration->triggerInputPins[0] = Gpio::D4;  // crank
 	engineConfiguration->triggerInputPins[1] = Gpio::Unassigned;
 	engineConfiguration->camInputs[0] = Gpio::D3;         // cam
 
