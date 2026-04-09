@@ -6,33 +6,57 @@
 // vehicleSpeedSensor has external linkage in upstream — we hook into it
 extern FrequencySensor vehicleSpeedSensor;
 
-// Custom converter: wraps standard freq→km/h conversion + configurable spike rejection
-// Settings via TunerStudio: scriptSetting7 = enable (1/0), scriptSetting8 = max ratio
+// Custom converter: time-based spike rejection, counting from last ACCEPTED edge.
+// Enable: engineConfiguration->devBit0 (checkbox in TunerStudio)
+// Max ratio: engineConfiguration->scriptSetting[7]
 class SpikeRejectingVssConverter : public SensorConverter {
 public:
-	SensorResult convert(float frequency) const override {
-		bool enabled = engineConfiguration->scriptSetting[6] > 0.5f;
-		float maxRatio = engineConfiguration->scriptSetting[7];
+	SensorResult convert(float rawFrequency) const override {
+		efitimeus_t now = getTimeNowUs();
 
-		// Reject impossible spikes if filter is enabled and ratio is sane
-		if (enabled && maxRatio > 1.0f && m_lastFreq > 0 && frequency > m_lastFreq * maxRatio) {
-			m_rejectCount++;
-			return m_lastKph;  // return last known good value
+		if (engineConfiguration->devBit0 && m_lastAcceptedTimeUs > 0) {
+			float maxRatio = engineConfiguration->scriptSetting[7];
+			if (maxRatio < 1.1f) {
+				maxRatio = 3.0f;  // safety fallback
+			}
+
+			efitimeus_t elapsedUs = now - m_lastAcceptedTimeUs;
+
+			// Min acceptable period = last accepted period / maxRatio
+			float lastPeriodUs = 1000000.0f / m_lastAcceptedFreq;
+			if ((float)elapsedUs < lastPeriodUs / maxRatio) {
+				// Edge came too soon vs last accepted — spike, reject
+				return m_lastKph;
+			}
+
+			// Accepted: compute corrected freq from accepted-to-accepted interval
+			float correctedFreq = 1000000.0f / (float)elapsedUs;
+			m_lastAcceptedTimeUs = now;
+			m_lastAcceptedFreq = correctedFreq;
+			return convertFreqToKph(correctedFreq);
 		}
-		m_lastFreq = frequency;
 
-		auto vssRevPerKm = engineConfiguration->driveWheelRevPerKm * engineConfiguration->vssGearRatio;
-		auto pulsePerKm = vssRevPerKm * engineConfiguration->vssToothCount;
+		// Filter disabled or first reading — passthrough
+		m_lastAcceptedTimeUs = now;
+		m_lastAcceptedFreq = rawFrequency;
+		return convertFreqToKph(rawFrequency);
+	}
+
+private:
+	SensorResult convertFreqToKph(float freq) const {
+		auto pulsePerKm = engineConfiguration->driveWheelRevPerKm
+		                 * engineConfiguration->vssGearRatio
+		                 * engineConfiguration->vssToothCount;
 		if (pulsePerKm == 0) {
 			return 0;
 		}
-		m_lastKph = frequency * 3600.0f / pulsePerKm;
+		m_lastKph = freq * 3600.0f / pulsePerKm;
 		return m_lastKph;
 	}
 
-	mutable float m_lastFreq = 0;
+	mutable efitimeus_t m_lastAcceptedTimeUs = 0;
+	mutable float m_lastAcceptedFreq = 0;
 	mutable float m_lastKph = 0;
-	mutable int m_rejectCount = 0;
 };
 
 static SpikeRejectingVssConverter spikeRejectingVssConverter;
@@ -139,10 +163,9 @@ static void customBoardDefaultConfiguration() {
 	engineConfiguration->clt.config.bias_resistor = 2490;
 	engineConfiguration->iat.config.bias_resistor = 2490;
 
-	// ========== VSS spike filter defaults (Script Settings 7 & 8) ==========
-	engineConfiguration->scriptSetting[6] = 1.0f;   // 1 = enabled, 0 = disabled
-	engineConfiguration->scriptSetting[7] = 3.0f;   // max frequency jump ratio
-	strncpy(engineConfiguration->scriptSettingName[6], "VSSfiltEnable", 16);
+	// ========== VSS spike filter defaults ==========
+	engineConfiguration->devBit0 = true;           // enable by default
+	engineConfiguration->scriptSetting[7] = 3.0f;  // max frequency jump ratio
 	strncpy(engineConfiguration->scriptSettingName[7], "VSSspikeRatio", 16);
 }
 
