@@ -1,2 +1,5 @@
 ! Polonez board — no ETB, hide those pins in TunerStudio
 #define ts_show_etb_pins false
+
+! Enable Software Knock menu in TunerStudio
+#define ts_show_software_knock true

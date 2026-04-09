@@ -6,12 +6,16 @@
 // vehicleSpeedSensor has external linkage in upstream — we hook into it
 extern FrequencySensor vehicleSpeedSensor;
 
-// Custom converter: wraps standard freq→km/h conversion + spike rejection
+// Custom converter: wraps standard freq→km/h conversion + configurable spike rejection
+// Settings via TunerStudio: scriptSetting7 = enable (1/0), scriptSetting8 = max ratio
 class SpikeRejectingVssConverter : public SensorConverter {
 public:
 	SensorResult convert(float frequency) const override {
-		// Reject impossible spikes: if frequency jumps >3× vs previous, discard
-		if (m_lastFreq > 0 && frequency > m_lastFreq * 3.0f) {
+		bool enabled = engineConfiguration->scriptSetting[6] > 0.5f;
+		float maxRatio = engineConfiguration->scriptSetting[7];
+
+		// Reject impossible spikes if filter is enabled and ratio is sane
+		if (enabled && maxRatio > 1.0f && m_lastFreq > 0 && frequency > m_lastFreq * maxRatio) {
 			m_rejectCount++;
 			return m_lastKph;  // return last known good value
 		}
@@ -134,6 +138,12 @@ static void customBoardDefaultConfiguration() {
 	// ========== Sensor calibration ==========
 	engineConfiguration->clt.config.bias_resistor = 2490;
 	engineConfiguration->iat.config.bias_resistor = 2490;
+
+	// ========== VSS spike filter defaults (Script Settings 7 & 8) ==========
+	engineConfiguration->scriptSetting[6] = 1.0f;   // 1 = enabled, 0 = disabled
+	engineConfiguration->scriptSetting[7] = 3.0f;   // max frequency jump ratio
+	strncpy(engineConfiguration->scriptSettingName[6], "VSSfiltEnable", 16);
+	strncpy(engineConfiguration->scriptSettingName[7], "VSSspikeRatio", 16);
 }
 
 void setup_custom_board_overrides() {
