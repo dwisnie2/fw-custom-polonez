@@ -1,83 +1,6 @@
 #include "pch.h"
 #include "board_overrides.h"
 #include "frequency_sensor.h"
-#include "trigger_structure.h"
-#include "trigger_universal.h"
-
-// ========== Rover K16 trigger (MEMS3 Common Pattern 2) ==========
-// 36-slot crank wheel, 4 single missing teeth at 30/60/210/250° ATDC
-// Tooth groups between gaps: 2, 14, 3, 13
-//
-// Pattern starts at TDC (0° ATDC) so that globalTriggerAngleOffset = 0.
-// From TDC the physical teeth are:
-//   3 teeth (end of group-13)  →  gap_D (30°)  →  2 teeth  →  gap_A (60°)
-//   →  14 teeth  →  gap_B (210°)  →  3 teeth  →  gap_C (250°)
-//   →  10 teeth (start of group-13)
-//
-// Sync on gap_A — unique ratio sequence [2.0, 0.5, 2.0]:
-//   dur[0] = 40 (gap_A),  dur[1] = 20 (normal in group-2),  dur[2] = 40 (gap_D)
-//   gap[0] = 40/20 = 2.0   gap[1] = 20/40 = 0.5   gap[2] = 40/20 = 2.0
-// Other gaps: B=[2.0,1.0,1.0]  C=[2.0,1.0,0.5]  D=[2.0,1.0,1.0] — all different.
-
-static void initializeRoverK16(TriggerWaveform *s) {
-	s->initialize(FOUR_STROKE_CRANK_SENSOR, SyncEdge::RiseOnly);
-
-	constexpr float tooth = 720.0f / 36;  // 20° in 720° model = 10° physical
-	float base = 0;
-
-	// Last 3 teeth of group-13 (0°, 10°, 20° ATDC)
-	for (int i = 0; i < 3; i++) {
-		s->addEvent720(base + tooth / 2, TriggerValue::RISE);
-		s->addEvent720(base + tooth, TriggerValue::FALL);
-		base += tooth;
-	}
-	base += tooth;  // gap_D (30° ATDC)
-
-	// Group of 2 (40°, 50° ATDC)
-	for (int i = 0; i < 2; i++) {
-		s->addEvent720(base + tooth / 2, TriggerValue::RISE);
-		s->addEvent720(base + tooth, TriggerValue::FALL);
-		base += tooth;
-	}
-	base += tooth;  // gap_A (60° ATDC) — sync point
-
-	// Group of 14 (70°–200° ATDC)
-	for (int i = 0; i < 14; i++) {
-		s->addEvent720(base + tooth / 2, TriggerValue::RISE);
-		s->addEvent720(base + tooth, TriggerValue::FALL);
-		base += tooth;
-	}
-	base += tooth;  // gap_B (210° ATDC)
-
-	// Group of 3 (220°, 230°, 240° ATDC)
-	for (int i = 0; i < 3; i++) {
-		s->addEvent720(base + tooth / 2, TriggerValue::RISE);
-		s->addEvent720(base + tooth, TriggerValue::FALL);
-		base += tooth;
-	}
-	base += tooth;  // gap_C (250° ATDC)
-
-	// First 10 teeth of group-13 (260°–350° ATDC)
-	for (int i = 0; i < 10; i++) {
-		s->addEvent720(base + tooth / 2, TriggerValue::RISE);
-		s->addEvent720(base + tooth, TriggerValue::FALL);
-		base += tooth;
-	}
-	// base = 720 ✓
-
-	s->setTriggerSynchronizationGap3(/*gapIndex*/0, 1.5f, 2.5f);   // ~2.0
-	s->setTriggerSynchronizationGap3(/*gapIndex*/1, 0.35f, 0.65f); // ~0.5
-	s->setTriggerSynchronizationGap3(/*gapIndex*/2, 1.5f, 2.5f);   // ~2.0
-}
-
-void customTrigger(operation_mode_e triggerOperationMode, TriggerWaveform *s, trigger_type_e type) {
-	if (type == trigger_type_e::TT_CUSTOM_1) {
-		initializeRoverK16(s);
-		return;
-	}
-	// fallback: single tooth (default weak implementation behavior)
-	initializeSkippedToothTrigger(s, 1, 0, triggerOperationMode, SyncEdge::Rise);
-}
 
 // ========== VSS spike rejection filter ==========
 // vehicleSpeedSensor has external linkage in upstream — we hook into it
@@ -161,7 +84,7 @@ Gpio getWarningLedPin() {
 
 // Polonez board defaults — Speeduino-to-rusEFI adapter with STM32/GD32
 static void customBoardDefaultConfiguration() {
-	// ========== Trigger — Rover K16 (select "Custom 1" in TS, offset = 0) ==========
+	// ========== Trigger — Rover K16 (offset = 0) ==========
 	engineConfiguration->triggerInputPins[0] = Gpio::D4;  // crank
 	engineConfiguration->triggerInputPins[1] = Gpio::Unassigned;
 	engineConfiguration->camInputs[0] = Gpio::D3;         // cam
