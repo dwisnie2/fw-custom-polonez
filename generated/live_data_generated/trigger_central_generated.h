@@ -1,4 +1,4 @@
-// this section was generated automatically by rusEFI tool config_definition_base-all.jar based on (unknown script) controllers/trigger/trigger_central.txt
+// this section was generated automatically by rusEFI tool config_definition_base-all.jar based on (unknown script) controllers/trigger\trigger_central.txt
 // by class com.rusefi.output.CHeaderConsumer
 // begin
 #pragma once
@@ -71,7 +71,7 @@ struct trigger_central_s {
 	 */
 	float mapVvt_CycleDelta = (float)0;
 	/**
-	 * Sync: Engine Phase
+	 * Sync: TDC Engine Phase
 	 * units: deg
 	 * offset 48
 	 */
@@ -202,4 +202,4 @@ struct trigger_central_s {
 static_assert(sizeof(trigger_central_s) == 72);
 
 // end
-// this section was generated automatically by rusEFI tool config_definition_base-all.jar based on (unknown script) controllers/trigger/trigger_central.txt
+// this section was generated automatically by rusEFI tool config_definition_base-all.jar based on (unknown script) controllers/trigger\trigger_central.txt

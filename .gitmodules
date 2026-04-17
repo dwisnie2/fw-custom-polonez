@@ -1,4 +1,4 @@
 [submodule "ext/rusefi"]
 	path = ext/rusefi
-	url = https://github.com/dwisnie2/rusefi.git
-	branch = rover-k16
+        url = https://github.com/rusefi/rusefi.git
+        branch = master
