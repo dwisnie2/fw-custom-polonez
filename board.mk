@@ -20,6 +20,9 @@ DDEFS += -DWITH_LUA_STOP_ENGINE=FALSE
 DDEFS += -DSTM32_ADC_USE_ADC3=TRUE
 DDEFS += -DEFI_SOFTWARE_KNOCK=TRUE
 
+# idle-only crank-speed misfire detection
+DDEFS += -DEFI_MISFIRE_DETECTION=TRUE
+
 # knock frequency spectrogram
 DDEFS += -DKNOCK_SPECTROGRAM=TRUE
 
