@@ -1,74 +1,5 @@
 #include "pch.h"
 #include "board_overrides.h"
-#include "frequency_sensor.h"
-
-// ========== VSS spike rejection filter ==========
-// vehicleSpeedSensor has external linkage in upstream — we hook into it
-extern FrequencySensor vehicleSpeedSensor;
-
-// Custom converter: time-based spike rejection, counting from last ACCEPTED edge.
-// Enable: engineConfiguration->devBit0 (checkbox in TunerStudio)
-// Max ratio: engineConfiguration->scriptSetting[7]
-class SpikeRejectingVssConverter : public SensorConverter {
-public:
-	SensorResult convert(float rawFrequency) const override {
-		efitimeus_t now = getTimeNowUs();
-
-		if (engineConfiguration->devBit0 && m_lastAcceptedTimeUs > 0) {
-			float maxRatio = engineConfiguration->scriptSetting[7];
-			if (maxRatio < 1.1f) {
-				maxRatio = 3.0f;  // safety fallback
-			}
-
-			efitimeus_t elapsedUs = now - m_lastAcceptedTimeUs;
-
-			// Min acceptable period = last accepted period / maxRatio
-			float lastPeriodUs = 1000000.0f / m_lastAcceptedFreq;
-			if ((float)elapsedUs < lastPeriodUs / maxRatio) {
-				// Edge came too soon vs last accepted — spike, reject
-				return m_lastKph;
-			}
-
-			// Accepted: compute corrected freq from accepted-to-accepted interval
-			float correctedFreq = 1000000.0f / (float)elapsedUs;
-			m_lastAcceptedTimeUs = now;
-			m_lastAcceptedFreq = correctedFreq;
-			return convertFreqToKph(correctedFreq);
-		}
-
-		// Filter disabled or first reading — passthrough
-		m_lastAcceptedTimeUs = now;
-		m_lastAcceptedFreq = rawFrequency;
-		return convertFreqToKph(rawFrequency);
-	}
-
-private:
-	SensorResult convertFreqToKph(float freq) const {
-		auto pulsePerKm = engineConfiguration->driveWheelRevPerKm
-		                 * engineConfiguration->vssGearRatio
-		                 * engineConfiguration->vssToothCount;
-		if (pulsePerKm == 0) {
-			return 0;
-		}
-		m_lastKph = freq * 3600.0f / pulsePerKm;
-		return m_lastKph;
-	}
-
-	mutable efitimeus_t m_lastAcceptedTimeUs = 0;
-	mutable float m_lastAcceptedFreq = 0;
-	mutable float m_lastKph = 0;
-};
-
-static SpikeRejectingVssConverter spikeRejectingVssConverter;
-static bool vssFilterInstalled = false;
-
-static void polonezPeriodicFast() {
-	// One-shot: swap VSS converter to our spike-rejecting version after init
-	if (!vssFilterInstalled) {
-		vehicleSpeedSensor.setFunction(spikeRejectingVssConverter);
-		vssFilterInstalled = true;
-	}
-}
 
 Gpio getCommsLedPin() {
 	return Gpio::Unassigned;
@@ -162,16 +93,10 @@ static void customBoardDefaultConfiguration() {
 	// ========== Sensor calibration ==========
 	engineConfiguration->clt.config.bias_resistor = 2490;
 	engineConfiguration->iat.config.bias_resistor = 2490;
-
-	// ========== VSS spike filter defaults ==========
-	engineConfiguration->devBit0 = true;           // enable by default
-	engineConfiguration->scriptSetting[7] = 3.0f;  // max frequency jump ratio
-	strncpy(engineConfiguration->scriptSettingName[7], "VSSspikeRatio", 16);
 }
 
 void setup_custom_board_overrides() {
 	custom_board_DefaultConfiguration = customBoardDefaultConfiguration;
-	custom_board_periodicFastCallback = polonezPeriodicFast;
 
 	void customBoardTsAction(uint16_t subSystem, uint16_t index);
 	custom_board_ts_command = customBoardTsAction;
